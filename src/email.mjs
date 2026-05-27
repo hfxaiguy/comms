@@ -6,8 +6,8 @@ import { loadProfiles, logMessage } from './profiles.mjs';
 import { previewEmail, previewEmailBlast, confirmSendToRest } from './prompt.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TEMPLATES_DIR = path.join(__dirname, '..', 'email-templates');
-const CONFIG_PATH   = path.join(__dirname, '..', 'email.config.json');
+const TEMPLATES_DIR = process.env.EMAIL_TEMPLATES_DIR ?? path.join(__dirname, '..', 'email-templates');
+const CONFIG_PATH   = process.env.EMAIL_CONFIG_PATH   ?? path.join(__dirname, '..', 'email.config.json');
 
 function getAccountForGroup(group) {
   if (!existsSync(CONFIG_PATH)) {

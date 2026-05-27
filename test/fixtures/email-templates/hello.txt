@@ -1,0 +1,5 @@
+subject:Hello [first_name]!
+body:
+Hi [first_name] [last_name],
+
+This is a test email for the [group] group.

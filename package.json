@@ -6,7 +6,8 @@
     "comms": "./index.mjs"
   },
   "scripts": {
-    "start": "node index.mjs"
+    "start": "node index.mjs",
+    "test": "node --experimental-test-module-mocks --test 'test/*.test.mjs'"
   },
   "dependencies": {
     "googleapis": "^144.0.0",
