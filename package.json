@@ -10,7 +10,10 @@
     "test": "node --experimental-test-module-mocks --test 'test/*.test.mjs'"
   },
   "dependencies": {
+    "@huggingface/inference": "^4.13.18",
     "googleapis": "^144.0.0",
-    "nodemailer": "^8.0.9"
+    "node-imap": "^0.9.6",
+    "nodemailer": "^8.0.9",
+    "sharp": "^0.34.5"
   }
 }

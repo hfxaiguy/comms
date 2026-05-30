@@ -58,7 +58,7 @@ export async function confirmSendToRest(profiles) {
   return idx === 0;
 }
 
-async function arrowSelect(options) {
+export async function arrowSelect(options) {
   let idx = 0;
 
   const render = (redraw) => {

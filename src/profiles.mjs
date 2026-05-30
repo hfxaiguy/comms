@@ -42,14 +42,25 @@ export function parseProfiles(rows, group = '') {
       case 'Person': {
         current = {
           group,
-          firstName: row[1]?.trim() ?? '',
-          lastName:  row[2]?.trim() ?? '',
-          dateAdded: row[3]?.trim() ?? '',
-          interests: [],
-          notes:     [],
-          proposals: [],
-          messages:  [],
-          emails:    [],
+          firstName:       row[1]?.trim() ?? '',
+          lastName:        row[2]?.trim() ?? '',
+          dateAdded:       row[3]?.trim() ?? '',
+          emails:          [],
+          phones:          [],
+          websites:        [],
+          cards:           [],
+          interests:       [],
+          notes:           [],
+          proposals:       [],
+          promises:        [],
+          messages:        [],
+          professions:     [],
+          companies:       [],
+          podcasts:        [],
+          connectionLevel: '',
+          met:             '',
+          relatedTo:       [],
+          with:            [],
         };
         profiles.push(current);
         break;
@@ -77,11 +88,61 @@ export function parseProfiles(rows, group = '') {
         });
         break;
 
+      case 'Card':
+        if (current) current.cards.push(row[1]?.trim() ?? '');
+        break;
+
       case 'Email':
         if (current) current.emails.push({
           address: row[1]?.trim() ?? '',
           label:   row[2]?.trim() ?? '',
         });
+        break;
+
+      case 'Phone':
+        if (current) current.phones.push({
+          number: row[1]?.trim() ?? '',
+          label:  row[2]?.trim() ?? '',
+        });
+        break;
+
+      case 'Website':
+        if (current) current.websites.push({
+          url:   row[1]?.trim() ?? '',
+          label: row[2]?.trim() ?? '',
+        });
+        break;
+
+      case 'Profession':
+        if (current) current.professions.push({ text: row[1]?.trim() ?? '' });
+        break;
+
+      case 'Company':
+        if (current) current.companies.push({ text: row[1]?.trim() ?? '' });
+        break;
+
+      case 'Podcast':
+        if (current) current.podcasts.push({ text: row[1]?.trim() ?? '' });
+        break;
+
+      case 'Promise':
+        if (current) current.promises.push({ text: row[1]?.trim() ?? '' });
+        break;
+
+      case 'Connection Level':
+        if (current) current.connectionLevel = row[1]?.trim() ?? '';
+        break;
+
+      case 'Met':
+        if (current) current.met = row[1]?.trim() ?? '';
+        break;
+
+      case 'Related to':
+        if (current) current.relatedTo.push({ text: row[1]?.trim() ?? '' });
+        break;
+
+      case 'With':
+        if (current) current.with.push({ text: row[1]?.trim() ?? '' });
         break;
     }
   }

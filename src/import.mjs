@@ -41,7 +41,7 @@ function parseCsv(text) {
   return records;
 }
 
-async function findSpreadsheetForSheet(sheetName) {
+export async function findSpreadsheetForSheet(sheetName) {
   const { spreadsheets } = loadConfig();
   const matches = [];
 

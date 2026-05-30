@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import nodemailer from 'nodemailer';
 import { loadProfiles, logMessage } from './profiles.mjs';
 import { previewEmail, previewEmailBlast, confirmSendToRest } from './prompt.mjs';
+import { saveToSent } from './imap.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = process.env.EMAIL_TEMPLATES_DIR ?? path.join(__dirname, '..', 'email-templates');
@@ -90,8 +91,10 @@ export async function sendEmail(firstName, templateName) {
   const confirmed = await previewEmail({ to: toEmail, from: account.from, subject, body });
   if (!confirmed) { console.log('Cancelled.'); return; }
 
+  const mailOptions = { from: account.from, to: toEmail, subject, text: body };
   const transporter = nodemailer.createTransport(account.smtp);
-  await transporter.sendMail({ from: account.from, to: toEmail, subject, text: body });
+  await transporter.sendMail(mailOptions);
+  await saveToSent(account.imap, mailOptions);
 
   await logMessage(firstName, subject, 'Email', 'sent', templateName);
   console.log(`Sent and logged.`);
@@ -116,11 +119,13 @@ export async function sendBlast(groupName, templateName) {
   const template = loadTemplate(templateName);
 
   const doSend = async (profile) => {
-    const toEmail = profile.emails[0].address;
-    const subject = render(template.subject, profile);
-    const body    = render(template.body, profile);
+    const toEmail     = profile.emails[0].address;
+    const subject     = render(template.subject, profile);
+    const body        = render(template.body, profile);
+    const mailOptions = { from: account.from, to: toEmail, subject, text: body };
     const transporter = nodemailer.createTransport(account.smtp);
-    await transporter.sendMail({ from: account.from, to: toEmail, subject, text: body });
+    await transporter.sendMail(mailOptions);
+    await saveToSent(account.imap, mailOptions);
     await logMessage(profile.firstName, subject, 'Email', 'sent', templateName);
     const name = [profile.firstName, profile.lastName].filter(Boolean).join(' ');
     console.log(`  ✓ ${name}`);

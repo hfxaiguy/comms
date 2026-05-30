@@ -5,9 +5,24 @@ import { fileURLToPath } from 'url';
 import { loadProfiles, logMessage } from './src/profiles.mjs';
 import { importCsv } from './src/import.mjs';
 import { sendEmail, sendBlast, listTemplates } from './src/email.mjs';
+import { processCards } from './src/cards.mjs';
+import { saveToSent } from './src/imap.mjs';
+import nodemailer from 'nodemailer';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname   = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = path.join(__dirname, 'sheets.config.json');
+const CACHE_PATH  = path.join(__dirname, '.comms-cache.json');
+
+function readCache() {
+  try { return JSON.parse(readFileSync(CACHE_PATH, 'utf8')); }
+  catch { return null; }
+}
+
+function writeCache(profiles) {
+  const names  = profiles.map(p => [p.firstName, [p.firstName, p.lastName].filter(Boolean).join(' ')]);
+  const groups = [...new Set(profiles.map(p => p.group).filter(Boolean))];
+  writeFileSync(CACHE_PATH, JSON.stringify({ names, groups }, null, 2) + '\n');
+}
 
 function parseSpreadsheetId(input) {
   const urlMatch = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
@@ -23,14 +38,36 @@ function printProfiles(profiles) {
     const since = p.dateAdded ? `  added ${p.dateAdded}` : '';
     console.log(`\n── ${name}${group}${since}`);
 
+    if (p.cards.length)
+      p.cards.forEach(c => console.log(`   card       ${c}`));
+    if (p.connectionLevel) console.log(`   connection ${p.connectionLevel}`);
+    if (p.met)             console.log(`   met        ${p.met}`);
+
     if (p.emails.length)
       p.emails.forEach(e => console.log(`   email      ${e.address}${e.label ? ` (${e.label})` : ''}`));
+    if (p.phones.length)
+      p.phones.forEach(e => console.log(`   phone      ${e.number}${e.label ? ` (${e.label})` : ''}`));
+    if (p.websites.length)
+      p.websites.forEach(e => console.log(`   website    ${e.url}${e.label ? ` (${e.label})` : ''}`));
+
+    if (p.professions.length)
+      p.professions.forEach(x => console.log(`   profession ${x.text}`));
+    if (p.companies.length)
+      p.companies.forEach(x => console.log(`   company    ${x.text}`));
+    if (p.podcasts.length)
+      p.podcasts.forEach(x => console.log(`   podcast    ${x.text}`));
 
     if (p.interests.length)
       p.interests.forEach(i => console.log(`   interest   ${i.text}`));
+    if (p.relatedTo.length)
+      p.relatedTo.forEach(x => console.log(`   related to ${x.text}`));
+    if (p.with.length)
+      p.with.forEach(x => console.log(`   with       ${x.text}`));
 
     if (p.proposals.length)
       p.proposals.forEach(i => console.log(`   propose    ${i.text}`));
+    if (p.promises.length)
+      p.promises.forEach(x => console.log(`   promise    ${x.text}`));
 
     if (p.notes.length)
       p.notes.forEach(n => console.log(`   note       ${n.text}`));
@@ -53,13 +90,16 @@ switch (command) {
     break;
   }
 
-  // Internal: used by fish tab completion
+  // Internal: used by fish tab completion — reads from cache only (fast)
   case '_names': {
-    const profiles = await loadProfiles();
-    profiles.forEach(p => {
-      const full = [p.firstName, p.lastName].filter(Boolean).join(' ');
-      console.log(`${p.firstName}\t${full}`);
-    });
+    const cache = readCache();
+    if (cache) cache.names.forEach(([first, full]) => console.log(`${first}\t${full}`));
+    break;
+  }
+
+  case '_groups': {
+    const cache = readCache();
+    if (cache) cache.groups.forEach(g => console.log(g));
     break;
   }
 
@@ -68,12 +108,16 @@ switch (command) {
     break;
   }
 
-  case '_groups': {
+  case 'process-cards': {
+    await processCards({ reprocess: args.includes('--reprocess') });
+    break;
+  }
+
+  case 'bust-cache': {
+    process.stdout.write('Fetching profiles... ');
     const profiles = await loadProfiles();
-    const seen = new Set();
-    for (const p of profiles) {
-      if (p.group && !seen.has(p.group)) { seen.add(p.group); console.log(p.group); }
-    }
+    writeCache(profiles);
+    console.log(`done (${profiles.length} people, ${[...new Set(profiles.map(p => p.group).filter(Boolean))].length} groups).`);
     break;
   }
 
@@ -85,6 +129,35 @@ switch (command) {
     }
     await logMessage(name, words.join(' '), 'WhatsApp');
     console.log(`Logged WhatsApp message for ${name}.`);
+    break;
+  }
+
+  case 'test-email': {
+    const [to] = args;
+    if (!to) {
+      console.error('Usage: comms test-email <address>');
+      process.exit(1);
+    }
+    const emailConfig = JSON.parse(readFileSync(path.join(__dirname, 'email.config.json'), 'utf8'));
+    const account = emailConfig.default;
+    if (!account) throw new Error('No "default" account found in email.config.json.');
+    const mailOptions = {
+      from:    account.from,
+      to,
+      subject: 'comms config test',
+      text:    'If you received this, SMTP is working.',
+    };
+    process.stdout.write('Sending via SMTP... ');
+    const transporter = nodemailer.createTransport(account.smtp);
+    await transporter.sendMail(mailOptions);
+    console.log('ok');
+    if (account.imap) {
+      process.stdout.write('Saving to Sent via IMAP... ');
+      await saveToSent(account.imap, mailOptions);
+      console.log('ok');
+    } else {
+      console.log('No IMAP config — skipping Sent folder.');
+    }
     break;
   }
 
@@ -156,6 +229,8 @@ switch (command) {
     console.log('Usage: comms <command>');
     console.log('Commands:');
     console.log('  profiles                          List all profiles');
+    console.log('  bust-cache                        Refresh tab-completion cache');
+    console.log('  process-cards [--reprocess]       Extract contacts from business card images');
     console.log('  add-sheet <url-or-id>             Add a Google Sheets file to the config');
   console.log('  import-csv <file> <sheet-name>    Import people from a CSV into a sheet tab');
     console.log('  log-whatsapp <name> <message>     Log a sent WhatsApp message');

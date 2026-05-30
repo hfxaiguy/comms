@@ -3,3 +3,6 @@ service-account.json
 email.config.json
 hfxaiguy.txt
 sheets.config.json
+.comms-cache.json
+.business-card-state.json
+hf.config.json
