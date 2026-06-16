@@ -1,8 +1,7 @@
 import Imap from 'node-imap';
 import nodemailer from 'nodemailer';
 
-// Build a raw RFC 2822 message buffer from mail options using nodemailer's
-// stream transport (sends nothing, just serialises the message).
+/** Serialises `mailOptions` to a raw RFC 2822 buffer without sending anything. */
 async function buildRawMessage(mailOptions) {
   const transport = nodemailer.createTransport({ streamTransport: true, newline: 'unix' });
   const info = await transport.sendMail(mailOptions);
@@ -16,6 +15,7 @@ async function buildRawMessage(mailOptions) {
 
 const SENT_CANDIDATES = ['Sent', 'Sent Mail', 'Sent Messages', 'INBOX.Sent'];
 
+/** Opens an IMAP connection and resolves with the connected `Imap` instance. */
 function connectImap(imapConfig) {
   return new Promise((resolve, reject) => {
     const imap = new Imap({
@@ -31,6 +31,7 @@ function connectImap(imapConfig) {
   });
 }
 
+/** Returns a flat list of all mailbox names (including nested, with delimiter). */
 function getBoxNames(imap) {
   return new Promise((resolve, reject) => {
     imap.getBoxes((err, boxes) => {
@@ -49,6 +50,7 @@ function getBoxNames(imap) {
   });
 }
 
+/** Appends a raw message buffer to `mailbox`, marking it as read. */
 function appendToBox(imap, mailbox, raw) {
   return new Promise((resolve, reject) => {
     imap.append(raw, { mailbox, flags: ['\\Seen'] }, (err) => {
@@ -57,13 +59,14 @@ function appendToBox(imap, mailbox, raw) {
   });
 }
 
+/** Creates a new mailbox folder with the given name. */
 function createBox(imap, name) {
   return new Promise((resolve, reject) => {
     imap.addBox(name, (err) => { if (err) reject(err); else resolve(); });
   });
 }
 
-// Append a raw message buffer to the remote Sent folder via IMAP.
+/** Appends `raw` to the remote Sent folder, creating it if none of the standard names exist. */
 async function appendViaImap(imapConfig, raw) {
   const imap = await connectImap(imapConfig);
   try {
@@ -87,7 +90,7 @@ async function appendViaImap(imapConfig, raw) {
   }
 }
 
-// Call this after a successful SMTP send. No-ops if imapConfig is falsy.
+/** Saves `mailOptions` to the IMAP Sent folder. No-ops if `imapConfig` is falsy. */
 export async function saveToSent(imapConfig, mailOptions) {
   if (!imapConfig) return;
   const raw = await buildRawMessage(mailOptions);

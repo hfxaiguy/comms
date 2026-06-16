@@ -2,11 +2,13 @@
 import { readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { loadProfiles, logMessage } from './src/profiles.mjs';
-import { importCsv } from './src/import.mjs';
+import { loadProfiles, logMessage, appendPerson } from './src/profiles.mjs';
+import { readDescription, parseDescription, previewPerson } from './src/create.mjs';
+import { importCsv, importCsvToDb } from './src/import.mjs';
 import { sendEmail, sendBlast, listTemplates } from './src/email.mjs';
 import { processCards } from './src/cards.mjs';
 import { saveToSent } from './src/imap.mjs';
+import { arrowSelect } from './src/prompt.mjs';
 import nodemailer from 'nodemailer';
 
 const __dirname   = path.dirname(fileURLToPath(import.meta.url));
@@ -49,6 +51,8 @@ function printProfiles(profiles) {
       p.phones.forEach(e => console.log(`   phone      ${e.number}${e.label ? ` (${e.label})` : ''}`));
     if (p.websites.length)
       p.websites.forEach(e => console.log(`   website    ${e.url}${e.label ? ` (${e.label})` : ''}`));
+    if (p.socials.length)
+      p.socials.forEach(e => console.log(`   social     ${e.url}${e.label ? ` (${e.label})` : ''}`));
 
     if (p.professions.length)
       p.professions.forEach(x => console.log(`   profession ${x.text}`));
@@ -105,6 +109,34 @@ switch (command) {
 
   case '_templates': {
     listTemplates().forEach(t => console.log(t));
+    break;
+  }
+
+  case 'add-person': {
+    const profiles = await loadProfiles();
+    const groups   = [...new Set(profiles.map(p => p.group).filter(Boolean))];
+
+    if (!groups.length) {
+      console.error('No groups found.');
+      process.exit(1);
+    }
+
+    console.log('\nWhich group?');
+    const groupIdx = await arrowSelect(groups);
+    const group    = groups[groupIdx];
+
+    console.log();
+    const description = await readDescription();
+    if (!description) { console.log('Nothing entered.'); break; }
+
+    const fields = await parseDescription(description);
+    previewPerson(fields);
+
+    const go = await arrowSelect(['Save', 'Cancel']);
+    if (go !== 0) break;
+
+    await appendPerson(group, fields);
+    console.log('Saved.');
     break;
   }
 
@@ -193,13 +225,18 @@ switch (command) {
   }
 
   case 'import-csv': {
-    const [csvPath, sheetName] = args;
-    if (!csvPath || !sheetName) {
-      console.error('Usage: comms import-csv <file.csv> <sheet-name>');
+    const [csvPath, ...importRest] = args;
+    if (!csvPath) {
+      console.error('Usage: comms import-csv <file.csv> [--group <name>]');
       process.exit(1);
     }
-    const { added, skipped } = await importCsv(csvPath, sheetName);
-    console.log(`Imported ${added} people to "${sheetName}" (${skipped} duplicates skipped).`);
+    const groupFlagIdx = importRest.indexOf('--group');
+    const forceGroup   = groupFlagIdx !== -1 ? importRest[groupFlagIdx + 1] : undefined;
+    const { added, groupsAdded, skipped, unknown } = importCsvToDb(csvPath, forceGroup);
+    console.log(`Imported ${added} new profiles.`);
+    if (groupsAdded) console.log(`Added group to ${groupsAdded} existing profiles.`);
+    if (skipped)     console.log(`${skipped} duplicates already in that group, skipped.`);
+    if (unknown.length) console.log(`Unknown columns ignored: ${unknown.join(', ')}`);
     break;
   }
 
@@ -225,16 +262,32 @@ switch (command) {
     break;
   }
 
-  default:
-    console.log('Usage: comms <command>');
-    console.log('Commands:');
-    console.log('  profiles                          List all profiles');
-    console.log('  bust-cache                        Refresh tab-completion cache');
-    console.log('  process-cards [--reprocess]       Extract contacts from business card images');
-    console.log('  add-sheet <url-or-id>             Add a Google Sheets file to the config');
-  console.log('  import-csv <file> <sheet-name>    Import people from a CSV into a sheet tab');
-    console.log('  log-whatsapp <name> <message>     Log a sent WhatsApp message');
-  console.log('  send-blast <group> <template>     Send a templated email to a whole group');
-  console.log('  send-email <name> <template>      Preview and send a templated email');
-  console.log('  log-email <name> <subject>        Log a sent email (no send)');
+  case 'migrate': {
+    await import('./src/migrate.mjs');
+    break;
+  }
+
+  case 'help': {
+    console.log('Usage: comms [command]');
+    console.log('');
+    console.log('  (no command)                    Open the TUI');
+    console.log('  migrate [--force]               Import profiles from Google Sheets into SQLite');
+    console.log('  profiles                        Print all profiles (legacy)');
+    console.log('  bust-cache                      Refresh tab-completion cache');
+    console.log('  add-person                      Add a new person interactively');
+    console.log('  process-cards [--reprocess]     Extract contacts from business card images');
+    console.log('  add-sheet <url-or-id>           Add a Google Sheets file to the config');
+    console.log('  import-csv <file> [--group <n>] Import people from a CSV into the DB');
+    console.log('  log-whatsapp <name> <message>   Log a sent WhatsApp message');
+    console.log('  send-blast <group> <template>   Send a templated email to a whole group');
+    console.log('  send-email <name> <template>    Preview and send a templated email');
+    console.log('  log-email <name> <subject>      Log a sent email (no send)');
+    break;
+  }
+
+  default: {
+    const { launchTUI } = await import('./src/tui/app.mjs');
+    await launchTUI();
+    break;
+  }
 }

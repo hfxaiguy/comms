@@ -10,6 +10,7 @@ const CONFIG_PATH = path.join(__dirname, '..', 'hf.config.json');
 const MEDIA_TYPES  = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
 const MAX_LONG_SIDE = 1500;
 
+/** Resizes the image to fit within 1500px on the longest side and returns a JPEG buffer. */
 async function prepareImage(imagePath) {
   const img      = sharp(imagePath);
   const { width, height } = await img.metadata();
@@ -29,6 +30,7 @@ async function prepareImage(imagePath) {
   return { buffer, mediaType: 'image/jpeg' };
 }
 
+/** Returns the parsed hf.config.json, throwing a helpful error if the file is missing. */
 function loadHfConfig() {
   if (!existsSync(CONFIG_PATH)) {
     throw new Error(
@@ -39,14 +41,13 @@ function loadHfConfig() {
   return JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
 }
 
+/** Extracts the first valid JSON object from a model response, tolerating markdown fences. */
 function extractJson(text) {
-  // 1. Prefer an explicit ```json ... ``` block
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenced) {
     try { return JSON.parse(fenced[1].trim()); } catch {}
   }
 
-  // 2. Find the outermost { ... } in the text
   const start = text.indexOf('{');
   const end   = text.lastIndexOf('}');
   if (start !== -1 && end > start) {
@@ -79,6 +80,10 @@ Rules:
 - Never repeat the same value across fields or within an array. Each piece of information appears exactly once.
 - If a field has no data use an empty array or empty string. Never omit a field.`;
 
+/**
+ * Sends a business card image to Kimi VL and returns structured contact data as a plain object.
+ * Logs token usage and estimated cost to stdout.
+ */
 export async function extractCardInfo(imagePath) {
   const config    = loadHfConfig();
   const client    = new InferenceClient(config.token);

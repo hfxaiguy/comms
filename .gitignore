@@ -1,4 +1,7 @@
 node_modules/
+comms.db
+business-cards/
+
 service-account.json
 email.config.json
 hfxaiguy.txt

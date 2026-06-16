@@ -10,6 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = process.env.EMAIL_TEMPLATES_DIR ?? path.join(__dirname, '..', 'email-templates');
 const CONFIG_PATH   = process.env.EMAIL_CONFIG_PATH   ?? path.join(__dirname, '..', 'email.config.json');
 
+/** Returns the email account config for `group`, falling back to the default account. */
 function getAccountForGroup(group) {
   if (!existsSync(CONFIG_PATH)) {
     throw new Error(
@@ -29,12 +30,14 @@ function getAccountForGroup(group) {
   return account;
 }
 
+/** Returns the names of all `.txt` templates in the templates directory. */
 export function listTemplates() {
   return readdirSync(TEMPLATES_DIR)
     .filter(f => f.endsWith('.txt'))
     .map(f => path.basename(f, '.txt'));
 }
 
+/** Parses a template file into `{ subject, body }`, reading the Subject: and Body: headers. */
 function loadTemplate(name) {
   const filePath = path.join(TEMPLATES_DIR, `${name}.txt`);
   if (!existsSync(filePath)) {
@@ -57,6 +60,7 @@ function loadTemplate(name) {
   return { subject, body: lines.slice(bodyStart).join('\n').replace(/^\n+/, '') };
 }
 
+/** Replaces `[variable]` placeholders in `text` with values from `profile`. */
 function render(text, profile) {
   const vars = {
     first_name: profile.firstName,
@@ -68,6 +72,7 @@ function render(text, profile) {
   return text.replace(/\[(\w+)\]/g, (match, key) => vars[key] ?? match);
 }
 
+/** Previews and sends a templated email to one person, then logs it to the sheet. Errors if already sent. */
 export async function sendEmail(firstName, templateName) {
   const profiles = await loadProfiles();
   const nameLower = firstName.trim().toLowerCase();
@@ -100,6 +105,7 @@ export async function sendEmail(firstName, templateName) {
   console.log(`Sent and logged.`);
 }
 
+/** Sends a templated email to every person in `groupName` who hasn't received it yet, with per-email preview. */
 export async function sendBlast(groupName, templateName) {
   const profiles = await loadProfiles();
 

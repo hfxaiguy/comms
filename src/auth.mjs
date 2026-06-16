@@ -8,6 +8,7 @@ const KEY_PATH = path.join(__dirname, '..', 'service-account.json');
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
+/** Returns a GoogleAuth client scoped to Sheets, using service-account.json credentials. */
 export function getAuthClient() {
   if (!existsSync(KEY_PATH)) {
     throw new Error(
