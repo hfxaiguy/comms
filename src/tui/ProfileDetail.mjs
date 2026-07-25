@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Box, Text, useInput, useWindowSize } from 'ink';
-import { getAttributes, deleteProfile } from '../db.mjs';
+import { getAttributes, getRelationships, deleteProfile } from '../db.mjs';
 
 const h = React.createElement;
 
@@ -49,8 +49,13 @@ function formatValue(type, data) {
   }
 }
 
+const REL_LABEL = {
+  related_to: 'related to',
+  with:       'with',
+};
+
 // Returns an array of {label, value} entries with null as section separators.
-function buildLines(attrs) {
+function buildLines(attrs, relationships) {
   const byType = new Map();
   for (const a of attrs) {
     if (a.type === 'first_name' || a.type === 'last_name') continue;
@@ -76,6 +81,15 @@ function buildLines(attrs) {
   }
   for (const [type, items] of byType) flush(type, items);
 
+  // Add linked relationships
+  if (relationships?.length) {
+    if (needsSep) lines.push(null);
+    for (const rel of relationships) {
+      const label = REL_LABEL[rel.type] ?? rel.type;
+      lines.push({ label, value: rel.linked_name.trim() || `(profile #${rel.linked_profile_id})` });
+    }
+  }
+
   return lines;
 }
 
@@ -84,8 +98,9 @@ export default function ProfileDetail({ profileId, onBack, onEdit, onSendEmail, 
   const [offset, setOffset]             = useState(0);
   const [confirming, setConfirming]     = useState(false);
 
-  const attrs = useMemo(() => getAttributes(profileId), [profileId]);
-  const lines = useMemo(() => buildLines(attrs), [attrs]);
+  const attrs        = useMemo(() => getAttributes(profileId), [profileId]);
+  const relationships = useMemo(() => getRelationships(profileId), [profileId]);
+  const lines         = useMemo(() => buildLines(attrs, relationships), [attrs, relationships]);
 
   const firstName = attrs.find(a => a.type === 'first_name');
   const lastName  = attrs.find(a => a.type === 'last_name');

@@ -27,6 +27,17 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_attr_profile ON attributes(profile_id);
   CREATE INDEX IF NOT EXISTS idx_attr_type    ON attributes(type);
+
+  CREATE TABLE IF NOT EXISTS relationships (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    to_profile_id   INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    type            TEXT NOT NULL DEFAULT 'related_to',
+    created_at      TEXT DEFAULT (datetime('now')),
+    UNIQUE(from_profile_id, to_profile_id, type)
+  );
+  CREATE INDEX IF NOT EXISTS idx_rel_from ON relationships(from_profile_id);
+  CREATE INDEX IF NOT EXISTS idx_rel_to   ON relationships(to_profile_id);
 `);
 
 export function getProfiles() {
@@ -98,6 +109,143 @@ export function deleteAttribute(id) {
 
 export function deleteProfile(id) {
   db.prepare('DELETE FROM profiles WHERE id = ?').run(id);
+}
+
+export function getRelationships(profileId) {
+  return db.prepare(`
+    SELECT
+      r.id,
+      r.type,
+      r.from_profile_id,
+      r.to_profile_id,
+      CASE
+        WHEN r.from_profile_id = ? THEN r.to_profile_id
+        ELSE r.from_profile_id
+      END AS linked_profile_id,
+      CASE
+        WHEN r.from_profile_id = ? THEN
+          COALESCE(
+            (SELECT json_extract(a.data, '$') FROM attributes a WHERE a.profile_id = r.to_profile_id AND a.type = 'first_name'),
+            ''
+          ) || ' ' || COALESCE(
+            (SELECT json_extract(a.data, '$') FROM attributes a WHERE a.profile_id = r.to_profile_id AND a.type = 'last_name'),
+            ''
+          )
+        ELSE
+          COALESCE(
+            (SELECT json_extract(a.data, '$') FROM attributes a WHERE a.profile_id = r.from_profile_id AND a.type = 'first_name'),
+            ''
+          ) || ' ' || COALESCE(
+            (SELECT json_extract(a.data, '$') FROM attributes a WHERE a.profile_id = r.from_profile_id AND a.type = 'last_name'),
+            ''
+          )
+      END AS linked_name
+    FROM relationships r
+    WHERE r.from_profile_id = ? OR r.to_profile_id = ?
+    ORDER BY linked_name
+  `).all(profileId, profileId, profileId, profileId);
+}
+
+export function addRelationship(fromId, toId, type = 'related_to') {
+  if (fromId === toId) throw new Error('Cannot create a relationship between a profile and itself');
+  db.prepare(
+    'INSERT OR IGNORE INTO relationships (from_profile_id, to_profile_id, type) VALUES (?, ?, ?)'
+  ).run(fromId, toId, type);
+}
+
+export function deleteRelationship(id) {
+  db.prepare('DELETE FROM relationships WHERE id = ?').run(id);
+}
+
+export function migrateTextRelationships() {
+  const textRels = db.prepare(`
+    SELECT a.id AS attr_id, a.profile_id, a.type, a.data
+    FROM attributes a
+    WHERE a.type IN ('related_to', 'with')
+  `).all();
+
+  const findByName = db.prepare(`
+    SELECT p.id
+    FROM profiles p
+    JOIN attributes a1 ON a1.profile_id = p.id AND a1.type = 'first_name'
+    LEFT JOIN attributes a2 ON a2.profile_id = p.id AND a2.type = 'last_name'
+    WHERE lower(trim(json_extract(a1.data, '$') || ' ' || COALESCE(json_extract(a2.data, '$'), ''))) = ?
+    LIMIT 1
+  `);
+
+  let migrated = 0;
+  let unmatched = 0;
+
+  const run = db.transaction(() => {
+    for (const rel of textRels) {
+      const text = JSON.parse(rel.data);
+      if (typeof text !== 'string' || !text.trim()) {
+        unmatched++;
+        continue;
+      }
+
+      const nameKey = text.trim().toLowerCase();
+      const match = findByName.get(nameKey);
+
+      if (match && match.id !== rel.profile_id) {
+        addRelationship(rel.profile_id, match.id, rel.type);
+        deleteAttribute(rel.attr_id);
+        migrated++;
+      } else {
+        unmatched++;
+      }
+    }
+  });
+
+  run();
+  return { migrated, unmatched };
+}
+
+export function searchProfiles(query) {
+  const q = `%${query}%`;
+  return db.prepare(`
+    SELECT DISTINCT
+      p.id,
+      MAX(CASE WHEN a.type = 'first_name' THEN json_extract(a.data, '$') END) AS first_name,
+      MAX(CASE WHEN a.type = 'last_name'  THEN json_extract(a.data, '$') END) AS last_name,
+      GROUP_CONCAT(CASE WHEN a.type = 'group' THEN json_extract(a.data, '$') END) AS group_name
+    FROM profiles p
+    JOIN attributes a ON a.profile_id = p.id
+    WHERE json_extract(a.data, '$') LIKE ? ESCAPE '\\'
+       OR (a.type = 'email' AND json_extract(a.data, '$.address') LIKE ? ESCAPE '\\')
+       OR (a.type = 'phone' AND json_extract(a.data, '$.number') LIKE ? ESCAPE '\\')
+       OR (a.type = 'website' AND json_extract(a.data, '$.url') LIKE ? ESCAPE '\\')
+       OR (a.type = 'social' AND json_extract(a.data, '$.url') LIKE ? ESCAPE '\\')
+    GROUP BY p.id
+    ORDER BY first_name, last_name
+  `).all(q, q, q, q, q);
+}
+
+export function findProfileByName(name) {
+  const parts = name.trim().split(/\s+/);
+  let query, params;
+  if (parts.length >= 2) {
+    query = `
+      SELECT p.id
+      FROM profiles p
+      JOIN attributes a1 ON a1.profile_id = p.id AND a1.type = 'first_name'
+      LEFT JOIN attributes a2 ON a2.profile_id = p.id AND a2.type = 'last_name'
+      WHERE lower(json_extract(a1.data, '$')) = ?
+        AND lower(COALESCE(json_extract(a2.data, '$'), '')) = ?
+      LIMIT 1
+    `;
+    params = [parts[0].toLowerCase(), parts.slice(1).join(' ').toLowerCase()];
+  } else {
+    query = `
+      SELECT p.id
+      FROM profiles p
+      JOIN attributes a1 ON a1.profile_id = p.id AND a1.type = 'first_name'
+      WHERE lower(json_extract(a1.data, '$')) = ?
+      LIMIT 1
+    `;
+    params = [parts[0].toLowerCase()];
+  }
+  return db.prepare(query).get(...params);
 }
 
 export function logMessage(profileId, data) {

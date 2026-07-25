@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadProfiles, logMessage, appendPerson } from './src/profiles.mjs';
+import { getProfiles, getAttributes, getRelationships, migrateTextRelationships, searchProfiles, findProfileByName, addAttribute, updateAttribute, deleteAttribute } from './src/db.mjs';
 import { readDescription, parseDescription, previewPerson } from './src/create.mjs';
 import { importCsv, importCsvToDb } from './src/import.mjs';
 import { sendEmail, sendBlast, listTemplates } from './src/email.mjs';
@@ -35,49 +36,75 @@ function parseSpreadsheetId(input) {
 
 function printProfiles(profiles) {
   for (const p of profiles) {
-    const name  = [p.firstName, p.lastName].filter(Boolean).join(' ');
-    const group = p.group ? `  [${p.group}]` : '';
-    const since = p.dateAdded ? `  added ${p.dateAdded}` : '';
-    console.log(`\n── ${name}${group}${since}`);
+    const attrs = getAttributes(p.id);
+    const rels  = getRelationships(p.id);
 
-    if (p.cards.length)
-      p.cards.forEach(c => console.log(`   card       ${c}`));
-    if (p.connectionLevel) console.log(`   connection ${p.connectionLevel}`);
-    if (p.met)             console.log(`   met        ${p.met}`);
+    const get = (type) => {
+      const a = attrs.filter(x => x.type === type);
+      return a.map(x => JSON.parse(x.data));
+    };
+    const getText = (type) => get(type).filter(v => typeof v === 'string');
 
-    if (p.emails.length)
-      p.emails.forEach(e => console.log(`   email      ${e.address}${e.label ? ` (${e.label})` : ''}`));
-    if (p.phones.length)
-      p.phones.forEach(e => console.log(`   phone      ${e.number}${e.label ? ` (${e.label})` : ''}`));
-    if (p.websites.length)
-      p.websites.forEach(e => console.log(`   website    ${e.url}${e.label ? ` (${e.label})` : ''}`));
-    if (p.socials.length)
-      p.socials.forEach(e => console.log(`   social     ${e.url}${e.label ? ` (${e.label})` : ''}`));
+    const name  = [p.first_name, p.last_name].filter(Boolean).join(' ') || '(unnamed)';
+    const group = p.group_name ? `  [${p.group_name}]` : '';
+    console.log(`\n── ${name}${group}`);
 
-    if (p.professions.length)
-      p.professions.forEach(x => console.log(`   profession ${x.text}`));
-    if (p.companies.length)
-      p.companies.forEach(x => console.log(`   company    ${x.text}`));
-    if (p.podcasts.length)
-      p.podcasts.forEach(x => console.log(`   podcast    ${x.text}`));
+    const connectionLevel = getText('connection_level')[0];
+    const met             = getText('met')[0];
+    const dateAdded       = getText('date_added')[0];
+    if (dateAdded)       console.log(`   added      ${dateAdded}`);
+    if (connectionLevel) console.log(`   connection ${connectionLevel}`);
+    if (met)             console.log(`   met        ${met}`);
 
-    if (p.interests.length)
-      p.interests.forEach(i => console.log(`   interest   ${i.text}`));
-    if (p.relatedTo.length)
-      p.relatedTo.forEach(x => console.log(`   related to ${x.text}`));
-    if (p.with.length)
-      p.with.forEach(x => console.log(`   with       ${x.text}`));
+    const cards = getText('card');
+    if (cards.length) cards.forEach(c => console.log(`   card       ${c}`));
 
-    if (p.proposals.length)
-      p.proposals.forEach(i => console.log(`   propose    ${i.text}`));
-    if (p.promises.length)
-      p.promises.forEach(x => console.log(`   promise    ${x.text}`));
+    const emails = get('email');
+    if (emails.length)
+      emails.forEach(e => console.log(`   email      ${e.address}${e.label ? ` (${e.label})` : ''}`));
+    const phones = get('phone');
+    if (phones.length)
+      phones.forEach(e => console.log(`   phone      ${e.number}${e.label ? ` (${e.label})` : ''}`));
+    const websites = get('website');
+    if (websites.length)
+      websites.forEach(e => console.log(`   website    ${e.url}${e.label ? ` (${e.label})` : ''}`));
+    const socials = get('social');
+    if (socials.length)
+      socials.forEach(e => console.log(`   social     ${e.url}${e.label ? ` (${e.label})` : ''}`));
 
-    if (p.notes.length)
-      p.notes.forEach(n => console.log(`   note       ${n.text}`));
+    const professions = getText('profession');
+    if (professions.length) professions.forEach(x => console.log(`   profession ${x}`));
+    const companies = getText('company');
+    if (companies.length) companies.forEach(x => console.log(`   company    ${x}`));
+    const podcasts = getText('podcast');
+    if (podcasts.length) podcasts.forEach(x => console.log(`   podcast    ${x}`));
 
-    if (p.messages.length)
-      p.messages.forEach(m => {
+    const interests = getText('interest');
+    if (interests.length) interests.forEach(i => console.log(`   interest   ${i}`));
+
+    if (rels.length)
+      rels.forEach(r => {
+        const label = r.type === 'with' ? 'with' : 'related to';
+        console.log(`   ${label.padEnd(12)}${r.linked_name.trim() || `(profile #${r.linked_profile_id})`}`);
+      });
+
+    // Show any remaining text-based relationships (unmatched during migration)
+    const relatedTo = getText('related_to');
+    if (relatedTo.length) relatedTo.forEach(x => console.log(`   related to ${x}`));
+    const withText = getText('with');
+    if (withText.length) withText.forEach(x => console.log(`   with       ${x}`));
+
+    const proposals = getText('proposal');
+    if (proposals.length) proposals.forEach(i => console.log(`   propose    ${i}`));
+    const promises = getText('promise');
+    if (promises.length) promises.forEach(x => console.log(`   promise    ${x}`));
+
+    const notes = getText('note');
+    if (notes.length) notes.forEach(n => console.log(`   note       ${n}`));
+
+    const messages = get('message');
+    if (messages.length)
+      messages.forEach(m => {
         const meta = [m.dateSent, m.status, m.channel].filter(Boolean).join(' · ');
         console.log(`   message    ${m.text || '(empty)'}${meta ? `  [${meta}]` : ''}`);
       });
@@ -89,8 +116,180 @@ const [,, command, ...args] = process.argv;
 
 switch (command) {
   case 'profiles': {
-    const profiles = await loadProfiles();
+    const profiles = getProfiles();
     printProfiles(profiles);
+    break;
+  }
+
+  case 'search': {
+    const query = args.join(' ').trim();
+    if (!query) {
+      console.error('Usage: comms search <query>');
+      process.exit(1);
+    }
+    const results = searchProfiles(query);
+    if (results.length === 0) {
+      console.log(`No profiles matching "${query}".`);
+    } else {
+      console.log(`${results.length} result(s) for "${query}":\n`);
+      for (const p of results) {
+        const attrs = getAttributes(p.id);
+        const get = (type) => {
+          const a = attrs.filter(x => x.type === type);
+          return a.map(x => JSON.parse(x.data));
+        };
+        const getText = (type) => get(type).filter(v => typeof v === 'string');
+        const name = [p.first_name, p.last_name].filter(Boolean).join(' ') || '(unnamed)';
+        const group = p.group_name ? `  [${p.group_name}]` : '';
+        const company = getText('company')[0] ?? '';
+        const email = get('email')[0]?.address ?? '';
+        const parts = [`── ${name}${group}`];
+        if (company) parts.push(`company: ${company}`);
+        if (email)   parts.push(`email: ${email}`);
+        console.log(parts.join('  ·  '));
+      }
+    }
+    console.log();
+    break;
+  }
+
+  case 'edit': {
+    const nameArg = args.filter(a => !a.startsWith('--')).join(' ').trim();
+    if (!nameArg) {
+      console.error('Usage: comms edit <name> [--set type=value] [--add type=value] [--delete <attr-id>]');
+      process.exit(1);
+    }
+
+    const profile = findProfileByName(nameArg);
+    if (!profile) {
+      console.error(`No profile found matching "${nameArg}".`);
+      process.exit(1);
+    }
+
+    const attrs = getAttributes(profile.id);
+    const firstName = attrs.find(a => a.type === 'first_name');
+    const lastName  = attrs.find(a => a.type === 'last_name');
+    const profileName = [
+      firstName && JSON.parse(firstName.data),
+      lastName  && JSON.parse(lastName.data),
+    ].filter(Boolean).join(' ') || '(unnamed)';
+
+    const setArgs   = args.filter(a => a.startsWith('--set')).map((_, i) => args[args.indexOf('--set') + 1 + i]).filter(Boolean);
+    const addArgs   = args.filter(a => a.startsWith('--add')).map((_, i) => args[args.indexOf('--add') + 1 + i]).filter(Boolean);
+    const delArgs   = args.filter(a => a.startsWith('--delete')).map((_, i) => args[args.indexOf('--delete') + 1 + i]).filter(Boolean);
+
+    // Parse --set flags
+    for (const flag of args) {
+      if (flag === '--set' || flag === '--add' || flag === '--delete') continue;
+    }
+
+    const parseFlag = (arg) => {
+      const eq = arg.indexOf('=');
+      if (eq === -1) return null;
+      return { type: arg.slice(0, eq).trim(), value: arg.slice(eq + 1).trim() };
+    };
+
+    // Collect flag values properly
+    const setFlags = [];
+    const addFlags = [];
+    const delFlags = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--set' && args[i + 1])    { setFlags.push(args[++i]); }
+      else if (args[i] === '--add' && args[i + 1])    { addFlags.push(args[++i]); }
+      else if (args[i] === '--delete' && args[i + 1]) { delFlags.push(args[++i]); }
+    }
+
+    const FRESH_DATA = {
+      email:   (v) => JSON.stringify({ address: v, label: '' }),
+      phone:   (v) => JSON.stringify({ number: v, label: '' }),
+      website: (v) => JSON.stringify({ url: v, label: '' }),
+      social:  (v) => JSON.stringify({ url: v, label: '', status: '', lastChecked: '' }),
+    };
+
+    let changed = 0;
+
+    if (setFlags.length) {
+      for (const arg of setFlags) {
+        const parsed = parseFlag(arg);
+        if (!parsed) { console.error(`Invalid --set format: "${arg}". Use --set type=value`); continue; }
+        const { type, value } = parsed;
+        const existing = attrs.find(a => a.type === type);
+        if (!existing) {
+          console.error(`No existing "${type}" attribute on ${profileName}. Use --add to create one.`);
+          continue;
+        }
+        const newData = typeof JSON.parse(existing.data) === 'string'
+          ? JSON.stringify(value)
+          : (() => {
+              const v = JSON.parse(existing.data);
+              if (v.address !== undefined) return JSON.stringify({ ...v, address: value });
+              if (v.number  !== undefined) return JSON.stringify({ ...v, number: value });
+              if (v.url     !== undefined) return JSON.stringify({ ...v, url: value });
+              if (v.text    !== undefined) return JSON.stringify({ ...v, text: value });
+              return JSON.stringify(value);
+            })();
+        updateAttribute(existing.id, newData);
+        console.log(`Updated ${profileName}: ${type} = ${value}`);
+        changed++;
+      }
+    }
+
+    if (addFlags.length) {
+      for (const arg of addFlags) {
+        const parsed = parseFlag(arg);
+        if (!parsed) { console.error(`Invalid --add format: "${arg}". Use --add type=value`); continue; }
+        const { type, value } = parsed;
+        const freshFn = FRESH_DATA[type];
+        const data = freshFn ? freshFn(value) : JSON.stringify(value);
+        addAttribute(profile.id, type, data);
+        console.log(`Added to ${profileName}: ${type} = ${value}`);
+        changed++;
+      }
+    }
+
+    if (delFlags.length) {
+      for (const idStr of delFlags) {
+        const id = parseInt(idStr, 10);
+        if (isNaN(id)) { console.error(`Invalid attribute ID: "${idStr}"`); continue; }
+        const attr = attrs.find(a => a.id === id);
+        if (!attr) { console.error(`Attribute #${id} not found on ${profileName}.`); continue; }
+        deleteAttribute(id);
+        console.log(`Deleted attribute #${id} (${attr.type}) from ${profileName}`);
+        changed++;
+      }
+    }
+
+    if (!setFlags.length && !addFlags.length && !delFlags.length) {
+      // No flags: just print the profile
+      console.log(`Profile: ${profileName} (id: ${profile.id})\n`);
+      const LABEL_W = 16;
+      for (const a of attrs) {
+        if (a.type === 'first_name' || a.type === 'last_name') continue;
+        const v = JSON.parse(a.data);
+        let display;
+        if (typeof v === 'string') display = v;
+        else if (v.address) display = v.address;
+        else if (v.number)  display = v.number;
+        else if (v.url)     display = v.url;
+        else if (v.text)    display = v.text;
+        else display = JSON.stringify(v);
+        const label = a.type.padEnd(LABEL_W);
+        console.log(`  #${String(a.id).padEnd(4)} ${label} ${display}`);
+      }
+      const rels = getRelationships(profile.id);
+      if (rels.length) {
+        console.log();
+        for (const r of rels) {
+          const label = (r.type === 'with' ? 'with' : 'related to').padEnd(LABEL_W);
+          console.log(`  rel  ${label} ${r.linked_name.trim() || `profile #${r.linked_profile_id}`}`);
+        }
+      }
+      console.log();
+      console.log('Flags: --set type=value  --add type=value  --delete <attr-id>');
+    } else if (changed) {
+      console.log(`\n${changed} change(s) applied.`);
+    }
+
     break;
   }
 
@@ -267,21 +466,39 @@ switch (command) {
     break;
   }
 
+  case 'migrate-relationships': {
+    const result = migrateTextRelationships();
+    console.log(`Relationships migrated: ${result.migrated} linked, ${result.unmatched} unmatched.`);
+    break;
+  }
+
+  case 'import-podcast-attendees': {
+    await import('./src/import-podcast-attendees.mjs');
+    break;
+  }
+
   case 'help': {
     console.log('Usage: comms [command]');
     console.log('');
-    console.log('  (no command)                    Open the TUI');
-    console.log('  migrate [--force]               Import profiles from Google Sheets into SQLite');
-    console.log('  profiles                        Print all profiles (legacy)');
-    console.log('  bust-cache                      Refresh tab-completion cache');
-    console.log('  add-person                      Add a new person interactively');
-    console.log('  process-cards [--reprocess]     Extract contacts from business card images');
-    console.log('  add-sheet <url-or-id>           Add a Google Sheets file to the config');
-    console.log('  import-csv <file> [--group <n>] Import people from a CSV into the DB');
-    console.log('  log-whatsapp <name> <message>   Log a sent WhatsApp message');
-    console.log('  send-blast <group> <template>   Send a templated email to a whole group');
-    console.log('  send-email <name> <template>    Preview and send a templated email');
-    console.log('  log-email <name> <subject>      Log a sent email (no send)');
+    console.log('  (no command)                           Open the TUI');
+    console.log('  profiles                               List all profiles from DB');
+    console.log('  search <query>                         Search profiles by name, email, company, etc.');
+    console.log('  edit <name> [--set k=v] [--add k=v]    View or edit a profile');
+    console.log('                 [--delete <attr-id>]');
+    console.log('  add-person                             Add a new person interactively');
+    console.log('  migrate [--force]                      Import profiles from Google Sheets');
+    console.log('  migrate-relationships                  Link text relationships to profile IDs');
+    console.log('  import-csv <file> [--group <name>]     Import people from a CSV into the DB');
+    console.log('  import-podcast-attendees [--force]     Import Podcast Show attendees');
+    console.log('  add-sheet <url-or-id>                  Add a Google Sheets file to the config');
+    console.log('  process-cards [--reprocess]            Extract contacts from business cards');
+    console.log('  send-email <name> <template>           Preview and send a templated email');
+    console.log('  send-blast <group> <template>          Send a templated email to a group');
+    console.log('  log-whatsapp <name> <message>          Log a sent WhatsApp message');
+    console.log('  log-email <name> <subject>             Log a sent email (no send)');
+    console.log('  test-email <address>                   Send a test email to verify SMTP');
+    console.log('  bust-cache                             Refresh tab-completion cache');
+    console.log('  help                                   Show this help');
     break;
   }
 

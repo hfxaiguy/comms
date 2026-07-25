@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useWindowSize } from 'ink';
-import { getAttributes, addAttribute, updateAttribute, deleteAttribute } from '../db.mjs';
+import { getAttributes, addAttribute, updateAttribute, deleteAttribute, getRelationships, addRelationship, deleteRelationship, getProfiles } from '../db.mjs';
 
 const h = React.createElement;
 
 const TYPES = [
   'note', 'email', 'phone', 'company', 'profession',
   'interest', 'group', 'website', 'social',
-  'related_to', 'with', 'proposal', 'promise',
+  'proposal', 'promise',
   'podcast', 'met', 'connection_level', 'date_added',
   'first_name', 'last_name', 'card',
 ];
@@ -19,6 +19,13 @@ const LABEL = {
   company: 'company', profession: 'profession', podcast: 'podcast',
   interest: 'interest', related_to: 'related to', with: 'with',
   note: 'note', proposal: 'proposal', promise: 'promise', card: 'card',
+};
+
+const REL_TYPES = ['related_to', 'with'];
+
+const REL_LABEL = {
+  related_to: 'related to',
+  with:       'with',
 };
 
 const LABEL_W = 16;
@@ -81,15 +88,23 @@ export default function EditProfile({ profileId, onBack }) {
   const { rows } = useWindowSize();
 
   const [attrs,      setAttrs]      = useState(() => getAttributes(profileId));
-  const [mode,       setMode]       = useState('browse'); // browse | editing | adding-type | adding-value | confirm-delete
+  const [rels,       setRels]       = useState(() => getRelationships(profileId));
+  const [mode,       setMode]       = useState('browse'); // browse | editing | adding-type | adding-value | adding-rel-type | adding-rel-profile | confirm-delete
   const [cursor,     setCursor]     = useState(0);
   const [offset,     setOffset]     = useState(0);
   const [typeCursor, setTypeCursor] = useState(0);
   const [typeOffset, setTypeOffset] = useState(0);
   const [inputVal,   setInputVal]   = useState('');
   const [addingType, setAddingType] = useState(null);
+  const [addingRelType, setAddingRelType] = useState(null);
+  const [profileCursor, setProfileCursor] = useState(0);
+  const [profileOffset, setProfileOffset] = useState(0);
+  const [profileSearch, setProfileSearch] = useState('');
 
-  const refresh = () => setAttrs(getAttributes(profileId));
+  const refresh = () => {
+    setAttrs(getAttributes(profileId));
+    setRels(getRelationships(profileId));
+  };
 
   const firstName = attrs.find(a => a.type === 'first_name');
   const lastName  = attrs.find(a => a.type === 'last_name');
@@ -97,6 +112,32 @@ export default function EditProfile({ profileId, onBack }) {
     firstName && JSON.parse(firstName.data),
     lastName  && JSON.parse(lastName.data),
   ].filter(Boolean).join(' ') || '(unnamed)';
+
+  // Build combined browsable list: attributes first, then relationships
+  const items = useMemo(() => {
+    const attrItems = attrs
+      .filter(a => a.type !== 'first_name' && a.type !== 'last_name')
+      .map(a => ({ _kind: 'attr', ...a }));
+    const relItems = rels.map(r => ({
+      _kind: 'rel',
+      id: r.id,
+      type: r.type,
+      linked_name: r.linked_name,
+      linked_profile_id: r.linked_profile_id,
+    }));
+    return [...attrItems, ...relItems];
+  }, [attrs, rels]);
+
+  // All profiles for the relationship picker (excluding self)
+  const allProfiles = useMemo(() => getProfiles().filter(p => p.id !== profileId), [profileId]);
+  const filteredProfiles = useMemo(() => {
+    if (!profileSearch) return allProfiles;
+    const q = profileSearch.toLowerCase();
+    return allProfiles.filter(p =>
+      (p.first_name ?? '').toLowerCase().includes(q) ||
+      (p.last_name  ?? '').toLowerCase().includes(q)
+    );
+  }, [allProfiles, profileSearch]);
 
   // Keep browse cursor in the scroll window
   const listHeight = Math.max(1, rows - 5);
@@ -111,55 +152,40 @@ export default function EditProfile({ profileId, onBack }) {
     if (typeCursor >= typeOffset + typeListHeight) setTypeOffset(typeCursor - typeListHeight + 1);
   }, [typeCursor, typeOffset, typeListHeight]);
 
+  const profileListHeight = Math.max(1, rows - 6);
+  useEffect(() => {
+    if (profileCursor < profileOffset)                       setProfileOffset(profileCursor);
+    if (profileCursor >= profileOffset + profileListHeight)  setProfileOffset(profileCursor - profileListHeight + 1);
+  }, [profileCursor, profileOffset, profileListHeight]);
+
   useInput((input, key) => {
 
     // ── browse ──────────────────────────────────────────────────────────────
     if (mode === 'browse') {
       if (key.escape || input === 'q') { onBack(); return; }
       if (key.upArrow)                 { setCursor(c => Math.max(0, c - 1)); return; }
-      if (key.downArrow)               { setCursor(c => Math.min(attrs.length - 1, c + 1)); return; }
+      if (key.downArrow)               { setCursor(c => Math.min(items.length - 1, c + 1)); return; }
       if (input === 'a')               { setTypeCursor(0); setTypeOffset(0); setMode('adding-type'); return; }
-      if (input === 'd' && attrs[cursor]) { setMode('confirm-delete'); return; }
-      if ((key.return || input === 'e') && attrs[cursor]) {
-        setInputVal(getPrimary(attrs[cursor].type, attrs[cursor].data));
-        setMode('editing');
+      if (input === 'r')               { setAddingRelType('related_to'); setProfileSearch(''); setProfileCursor(0); setProfileOffset(0); setMode('adding-rel-profile'); return; }
+      if (input === 'd' && items[cursor]) { setMode('confirm-delete'); return; }
+      if ((key.return || input === 'e') && items[cursor]) {
+        if (items[cursor]._kind === 'attr') {
+          setInputVal(getPrimary(items[cursor].type, items[cursor].data));
+          setMode('editing');
+        }
         return;
       }
       return;
     }
 
-    // ── editing ──────────────────────────────────────────────────────────────
+    // ── editing (attributes only) ────────────────────────────────────────────
     if (mode === 'editing') {
       if (key.escape)                      { setMode('browse'); return; }
       if (key.return) {
-        const attr = attrs[cursor];
-        updateAttribute(attr.id, mergePrimary(attr.type, attr.data, inputVal));
-        refresh();
-        setMode('browse');
-        return;
-      }
-      if (key.backspace || key.delete)     { setInputVal(v => v.slice(0, -1)); return; }
-      if (input && !key.ctrl && !key.meta) { setInputVal(v => v + input); return; }
-      return;
-    }
-
-    // ── adding-type ──────────────────────────────────────────────────────────
-    if (mode === 'adding-type') {
-      if (key.escape)    { setMode('browse'); return; }
-      if (key.upArrow)   { setTypeCursor(c => Math.max(0, c - 1)); return; }
-      if (key.downArrow) { setTypeCursor(c => Math.min(TYPES.length - 1, c + 1)); return; }
-      if (key.return)    { setAddingType(TYPES[typeCursor]); setInputVal(''); setMode('adding-value'); return; }
-      return;
-    }
-
-    // ── adding-value ─────────────────────────────────────────────────────────
-    if (mode === 'adding-value') {
-      if (key.escape)                      { setMode('adding-type'); return; }
-      if (key.return) {
-        if (inputVal.trim()) {
-          addAttribute(profileId, addingType, freshData(addingType, inputVal.trim()));
+        const item = items[cursor];
+        if (item?._kind === 'attr') {
+          updateAttribute(item.id, mergePrimary(item.type, item.data, inputVal));
           refresh();
-          setCursor(attrs.length); // move to the newly added item
         }
         setMode('browse');
         return;
@@ -169,10 +195,58 @@ export default function EditProfile({ profileId, onBack }) {
       return;
     }
 
+    // ── adding-type (pick attribute type) ────────────────────────────────────
+    if (mode === 'adding-type') {
+      if (key.escape)    { setMode('browse'); return; }
+      if (key.upArrow)   { setTypeCursor(c => Math.max(0, c - 1)); return; }
+      if (key.downArrow) { setTypeCursor(c => Math.min(TYPES.length - 1, c + 1)); return; }
+      if (key.return)    { setAddingType(TYPES[typeCursor]); setInputVal(''); setMode('adding-value'); return; }
+      return;
+    }
+
+    // ── adding-value (new attribute value) ───────────────────────────────────
+    if (mode === 'adding-value') {
+      if (key.escape)                      { setMode('adding-type'); return; }
+      if (key.return) {
+        if (inputVal.trim()) {
+          addAttribute(profileId, addingType, freshData(addingType, inputVal.trim()));
+          refresh();
+          setCursor(items.length);
+        }
+        setMode('browse');
+        return;
+      }
+      if (key.backspace || key.delete)     { setInputVal(v => v.slice(0, -1)); return; }
+      if (input && !key.ctrl && !key.meta) { setInputVal(v => v + input); return; }
+      return;
+    }
+
+    // ── adding-rel-profile (pick profile for relationship) ───────────────────
+    if (mode === 'adding-rel-profile') {
+      if (key.escape)                      { setMode('browse'); return; }
+      if (key.return && filteredProfiles.length > 0) {
+        const target = filteredProfiles[profileCursor];
+        addRelationship(profileId, target.id, addingRelType);
+        refresh();
+        setMode('browse');
+        return;
+      }
+      if (key.upArrow)                     { setProfileCursor(c => Math.max(0, c - 1)); return; }
+      if (key.downArrow)                   { setProfileCursor(c => Math.min(filteredProfiles.length - 1, c + 1)); return; }
+      if (key.backspace || key.delete)     { setProfileSearch(s => s.slice(0, -1)); setProfileCursor(0); return; }
+      if (input && !key.ctrl && !key.meta) { setProfileSearch(s => s + input); setProfileCursor(0); return; }
+      return;
+    }
+
     // ── confirm-delete ────────────────────────────────────────────────────────
     if (mode === 'confirm-delete') {
       if (input === 'y') {
-        deleteAttribute(attrs[cursor].id);
+        const item = items[cursor];
+        if (item?._kind === 'attr') {
+          deleteAttribute(item.id);
+        } else if (item?._kind === 'rel') {
+          deleteRelationship(item.id);
+        }
         refresh();
         setCursor(c => Math.max(0, c - 1));
         setMode('browse');
@@ -202,7 +276,7 @@ export default function EditProfile({ profileId, onBack }) {
     );
   }
 
-  // ── value input (adding) ───────────────────────────────────────────────────
+  // ── value input (adding attribute) ─────────────────────────────────────────
   if (mode === 'adding-value') {
     return h(Box, { flexDirection: 'column' },
       h(Box, { paddingX: 1 },
@@ -219,8 +293,38 @@ export default function EditProfile({ profileId, onBack }) {
     );
   }
 
+  // ── profile picker (adding relationship) ──────────────────────────────────
+  if (mode === 'adding-rel-profile') {
+    const visible = filteredProfiles.slice(profileOffset, profileOffset + profileListHeight);
+    return h(Box, { flexDirection: 'column' },
+      h(Box, { paddingX: 1 },
+        h(Text, { bold: true }, 'Link '),
+        h(Text, { bold: true, color: 'cyan' }, REL_LABEL[addingRelType] ?? addingRelType),
+        h(Text, { bold: true }, ' — pick profile'),
+      ),
+      h(Box, { paddingX: 1 },
+        h(Text, { color: 'yellow' }, profileSearch + '█'),
+        h(Text, { dimColor: true }, '  type to search'),
+      ),
+      ...visible.map((p, i) => {
+        const idx    = profileOffset + i;
+        const active = idx === profileCursor;
+        const pname  = [p.first_name, p.last_name].filter(Boolean).join(' ') || '(unnamed)';
+        return h(Box, { key: p.id, paddingX: 1 },
+          h(Text, { inverse: active }, `${active ? '▸' : ' '} ${pname}`),
+        );
+      }),
+      filteredProfiles.length === 0
+        ? h(Box, { paddingX: 3 }, h(Text, { dimColor: true }, 'no matching profiles'))
+        : null,
+      h(Box, { paddingX: 1, marginTop: 1 },
+        h(Text, { dimColor: true }, '↑↓ navigate  ↵ select  esc cancel'),
+      ),
+    );
+  }
+
   // ── browse / editing ───────────────────────────────────────────────────────
-  const visible = attrs.slice(offset, offset + listHeight);
+  const visible = items.slice(offset, offset + listHeight);
 
   return h(Box, { flexDirection: 'column' },
     h(Box, { paddingX: 1 },
@@ -229,15 +333,22 @@ export default function EditProfile({ profileId, onBack }) {
     ),
 
     h(Box, { flexDirection: 'column' },
-      attrs.length === 0
+      items.length === 0
         ? h(Box, { paddingX: 2 }, h(Text, { dimColor: true }, 'no attributes — press a to add'))
-        : visible.map((attr, i) => {
+        : visible.map((item, i) => {
             const idx    = offset + i;
             const active = idx === cursor;
-            const label  = (LABEL[attr.type] ?? attr.type).padEnd(LABEL_W);
+            const isAttr = item._kind === 'attr';
+            const label  = isAttr
+              ? (LABEL[item.type] ?? item.type).padEnd(LABEL_W)
+              : (REL_LABEL[item.type] ?? item.type).padEnd(LABEL_W);
+            const value  = isAttr
+              ? displayVal(item.type, item.data)
+              : (item.linked_name?.trim() || `(profile #${item.linked_profile_id})`);
+            const key    = isAttr ? `a-${item.id}` : `r-${item.id}`;
 
-            if (active && mode === 'editing') {
-              return h(Box, { key: attr.id, paddingX: 1 },
+            if (active && mode === 'editing' && isAttr) {
+              return h(Box, { key, paddingX: 1 },
                 h(Box, { width: LABEL_W + 1 },
                   h(Text, { color: 'cyan' }, `▸ ${label}`),
                 ),
@@ -247,26 +358,26 @@ export default function EditProfile({ profileId, onBack }) {
             }
 
             if (active && mode === 'confirm-delete') {
-              return h(Box, { key: attr.id, paddingX: 1 },
+              return h(Box, { key, paddingX: 1 },
                 h(Text, { color: 'red' }, `▸ ${label}`),
-                h(Text, { color: 'red' }, displayVal(attr.type, attr.data)),
+                h(Text, { color: 'red' }, value),
                 h(Text, { color: 'red' }, '  delete? y/n'),
               );
             }
 
-            return h(Box, { key: attr.id, paddingX: 1 },
+            return h(Box, { key, paddingX: 1 },
               h(Box, { width: LABEL_W + 2 },
                 h(Text, { inverse: active && mode === 'browse' },
                   `${active ? '▸' : ' '} ${label}`,
                 ),
               ),
-              h(Text, { dimColor: !active }, displayVal(attr.type, attr.data)),
+              h(Text, { dimColor: !active || item._kind === 'rel' }, value),
             );
           }),
     ),
 
     h(Box, { paddingX: 1, marginTop: 1 },
-      h(Text, { dimColor: true }, 'a add  ↵/e edit  d delete  esc back'),
+      h(Text, { dimColor: true }, 'a add attr  r add rel  ↵/e edit  d delete  esc back'),
     ),
   );
 }
