@@ -2,7 +2,8 @@ import OpenAI from 'openai';
 
 const HF_BASE_URL = process.env.HF_BASE_URL   ?? 'https://router.huggingface.co/v1/';
 const KIMI_MODEL  = process.env.KIMI_MODEL     ?? 'moonshotai/Kimi-K2-Instruct';
-const HF_API_KEY  = process.env.HF_TOKEN       ?? process.env.HUGGING_FACE_HUB_TOKEN ?? '[REDACTED]';
+const HF_API_KEY  = process.env.HF_TOKEN       ?? process.env.HUGGING_FACE_HUB_TOKEN;
+if (!HF_API_KEY) throw new Error('Set HF_TOKEN or HUGGING_FACE_HUB_TOKEN env var');
 
 const client = new OpenAI({ baseURL: HF_BASE_URL, apiKey: HF_API_KEY });
 
