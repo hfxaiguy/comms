@@ -6,7 +6,7 @@ const h = React.createElement;
 
 const TYPES = [
   'note', 'email', 'phone', 'company', 'profession',
-  'interest', 'group', 'website', 'social',
+  'interest', 'group', 'website', 'social', 'location',
   'proposal', 'promise',
   'podcast', 'met', 'connection_level', 'date_added',
   'first_name', 'last_name', 'card',
@@ -18,6 +18,7 @@ const LABEL = {
   email: 'email', phone: 'phone', website: 'website', social: 'social',
   company: 'company', profession: 'profession', podcast: 'podcast',
   interest: 'interest', related_to: 'related to', with: 'with',
+  location: 'location',
   note: 'note', proposal: 'proposal', promise: 'promise', card: 'card',
 };
 
@@ -39,6 +40,7 @@ function displayVal(type, data) {
     case 'phone':   return v.number  ?? '';
     case 'website': return v.url     ?? '';
     case 'social':  return [v.url, v.status ? `[${v.status}]` : ''].filter(Boolean).join(' ');
+    case 'location': return [v.city, v.region, v.country].filter(Boolean).join(', ');
     case 'message': return (v.text ?? '').slice(0, 50);
     default:        return JSON.stringify(v).slice(0, 50);
   }
@@ -53,6 +55,7 @@ function getPrimary(type, data) {
     case 'phone':            return v.number  ?? '';
     case 'website':
     case 'social':           return v.url     ?? '';
+    case 'location':         return v.region  ?? '';
     case 'message':          return v.text    ?? '';
     default:                 return JSON.stringify(v);
   }
@@ -67,6 +70,7 @@ function mergePrimary(type, existingData, newVal) {
     case 'phone':   return JSON.stringify({ ...v, number:  newVal });
     case 'website':
     case 'social':  return JSON.stringify({ ...v, url:     newVal });
+    case 'location': return JSON.stringify({ ...v, region: newVal });
     case 'message': return JSON.stringify({ ...v, text:    newVal });
     default:        return JSON.stringify(newVal);
   }
@@ -79,6 +83,7 @@ function freshData(type, val) {
     case 'phone':   return JSON.stringify({ number: val,  label: '' });
     case 'website': return JSON.stringify({ url: val,     label: '' });
     case 'social':  return JSON.stringify({ url: val, label: '', status: '', lastChecked: '' });
+    case 'location': return JSON.stringify({ city: val, region: '', country: '', label: '' });
     case 'message': return JSON.stringify({ text: val, channel: '', dateSent: new Date().toISOString().slice(0, 10), status: '', templateName: '' });
     default:        return JSON.stringify(val);
   }

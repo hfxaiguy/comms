@@ -12,6 +12,7 @@ const FIELDS = [
   { key: 'phone',      label: 'phone'      },
   { key: 'company',    label: 'company'    },
   { key: 'profession', label: 'profession' },
+  { key: 'location',   label: 'location'  },
   { key: 'note',       label: 'note'       },
 ];
 
@@ -28,6 +29,7 @@ function buildAttrs(values) {
   if (values.phone)      add('phone',      { number:  values.phone, label: '' });
   if (values.company)    add('company',    values.company);
   if (values.profession) add('profession', values.profession);
+  if (values.location)   add('location',   { city: values.location, region: '', country: '', label: '' });
   if (values.note)       add('note',       values.note);
 
   return attrs;

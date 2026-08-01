@@ -3,8 +3,8 @@ import { mkdirSync, existsSync } from 'fs';
 import os from 'os';
 import path from 'path';
 
-const DATA_DIR = path.join(os.homedir(), '.comms');
-const DB_PATH  = path.join(DATA_DIR, 'comms.db');
+const DATA_DIR = process.env.COMMS_DATA_DIR || path.join(os.homedir(), '.comms');
+const DB_PATH  = process.env.COMMS_DB_PATH || path.join(DATA_DIR, 'comms.db');
 
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
@@ -216,9 +216,14 @@ export function searchProfiles(query) {
        OR (a.type = 'phone' AND json_extract(a.data, '$.number') LIKE ? ESCAPE '\\')
        OR (a.type = 'website' AND json_extract(a.data, '$.url') LIKE ? ESCAPE '\\')
        OR (a.type = 'social' AND json_extract(a.data, '$.url') LIKE ? ESCAPE '\\')
+       OR (a.type = 'location' AND (
+         json_extract(a.data, '$.city') LIKE ? ESCAPE '\\'
+         OR json_extract(a.data, '$.region') LIKE ? ESCAPE '\\'
+         OR json_extract(a.data, '$.country') LIKE ? ESCAPE '\\'
+       ))
     GROUP BY p.id
     ORDER BY first_name, last_name
-  `).all(q, q, q, q, q);
+  `).all(q, q, q, q, q, q, q, q);
 }
 
 export function findProfileByName(name) {

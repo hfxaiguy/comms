@@ -6,7 +6,7 @@ const h = React.createElement;
 
 const TYPE_ORDER = [
   'group', 'connection_level', 'met', 'date_added',
-  'email', 'phone', 'website', 'social',
+  'email', 'phone', 'website', 'social', 'location',
   'company', 'profession',
   'podcast', 'interest',
   'related_to', 'with',
@@ -23,6 +23,7 @@ const LABEL = {
   phone:            'phone',
   website:          'website',
   social:           'social',
+  location:         'location',
   company:          'company',
   profession:       'profession',
   podcast:          'podcast',
@@ -44,6 +45,7 @@ function formatValue(type, data) {
     case 'phone':   return [v.number,  v.label].filter(Boolean).join('  ');
     case 'website': return [v.url,     v.label].filter(Boolean).join('  ');
     case 'social':  return [v.url,     v.label, v.status].filter(Boolean).join('  ');
+    case 'location': return [v.city, v.region, v.country, v.label].filter(Boolean).join(', ');
     case 'message': return [v.channel, v.dateSent, v.text].filter(Boolean).join('  ·  ');
     default:        return JSON.stringify(v);
   }

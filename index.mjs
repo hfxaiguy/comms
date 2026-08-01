@@ -200,10 +200,11 @@ switch (command) {
     }
 
     const FRESH_DATA = {
-      email:   (v) => JSON.stringify({ address: v, label: '' }),
-      phone:   (v) => JSON.stringify({ number: v, label: '' }),
-      website: (v) => JSON.stringify({ url: v, label: '' }),
-      social:  (v) => JSON.stringify({ url: v, label: '', status: '', lastChecked: '' }),
+      email:    (v) => JSON.stringify({ address: v, label: '' }),
+      phone:    (v) => JSON.stringify({ number: v, label: '' }),
+      website:  (v) => JSON.stringify({ url: v, label: '' }),
+      social:   (v) => JSON.stringify({ url: v, label: '', status: '', lastChecked: '' }),
+      location: (v) => JSON.stringify({ city: v, region: '', country: '', label: '' }),
     };
 
     let changed = 0;
@@ -225,6 +226,7 @@ switch (command) {
               if (v.address !== undefined) return JSON.stringify({ ...v, address: value });
               if (v.number  !== undefined) return JSON.stringify({ ...v, number: value });
               if (v.url     !== undefined) return JSON.stringify({ ...v, url: value });
+              if (v.region  !== undefined) return JSON.stringify({ ...v, region: value });
               if (v.text    !== undefined) return JSON.stringify({ ...v, text: value });
               return JSON.stringify(value);
             })();
