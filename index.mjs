@@ -6,6 +6,7 @@ import { loadProfiles, logMessage, appendPerson } from './src/profiles.mjs';
 import { getProfiles, getAttributes, getRelationships, migrateTextRelationships, searchProfiles, findProfileByName, addAttribute, updateAttribute, deleteAttribute } from './src/db.mjs';
 import { readDescription, parseDescription, previewPerson } from './src/create.mjs';
 import { importCsv, importCsvToDb } from './src/import.mjs';
+import { importJsonToDb } from './src/import-json.mjs';
 import { sendEmail, sendBlast, listTemplates } from './src/email.mjs';
 import { processCards } from './src/cards.mjs';
 import { saveToSent } from './src/imap.mjs';
@@ -479,6 +480,40 @@ switch (command) {
     break;
   }
 
+  case 'import-json': {
+    const jsonFlags = [];
+    const jsonGroup = [];
+    const jsonArray = [];
+    const jsonData = [];
+    const jsonForce = [];
+    const jsonSet = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--group' && args[i + 1])  { jsonGroup.push(args[++i]); }
+      else if (args[i] === '--set' && args[i + 1])    { jsonSet.push(args[++i]); }
+      else if (args[i] === '--array' && args[i + 1])  { jsonArray.push(args[++i]); }
+      else if (args[i] === '--data' && args[i + 1])   { jsonData.push(args[++i]); }
+      else if (args[i] === '--force')                  { jsonForce.push(true); }
+      else if (!args[i].startsWith('-'))               { jsonFlags.push(args[i]); }
+    }
+    const jsonPath = jsonFlags[0];
+    if (!jsonPath) {
+      console.error('Usage: comms import-json <file.json> [--group <name>] [--set type=value ...] [--array <key>] [--data <key>] [--force]');
+      process.exit(1);
+    }
+    const result = importJsonToDb(jsonPath, {
+      group: jsonGroup[0],
+      setFlags: jsonSet,
+      arrayPath: jsonArray[0],
+      dataPath: jsonData[0],
+      force: jsonForce.length > 0,
+    });
+    console.log(`Imported ${result.added} new profiles${jsonGroup[0] ? ` into "${jsonGroup[0]}"` : ''}.`);
+    if (result.groupsAdded) console.log(`Added group to ${result.groupsAdded} existing profiles.`);
+    if (result.skipped)     console.log(`${result.skipped} duplicates skipped.`);
+    if (result.unknown.length) console.log(`Unknown fields ignored: ${result.unknown.join(', ')}`);
+    break;
+  }
+
   case 'help': {
     console.log('Usage: comms [command]');
     console.log('');
@@ -492,6 +527,9 @@ switch (command) {
     console.log('  migrate-relationships                  Link text relationships to profile IDs');
     console.log('  import-csv <file> [--group <name>]     Import people from a CSV into the DB');
     console.log('  import-podcast-attendees [--force]     Import Podcast Show attendees');
+    console.log('  import-json <file> [--group <name>]    Import profiles from a JSON file');
+    console.log('             [--set type=value ...]');
+    console.log('             [--array <key>] [--data <key>] [--force]');
     console.log('  add-sheet <url-or-id>                  Add a Google Sheets file to the config');
     console.log('  process-cards [--reprocess]            Extract contacts from business cards');
     console.log('  send-email <name> <template>           Preview and send a templated email');
