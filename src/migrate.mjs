@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { loadProfiles } from './profiles.mjs';
-import db, { getProfiles, addRelationship } from './db.mjs';
+import { getDb, getProfiles, addRelationship } from './db.mjs';
+const db = getDb();
 
 const existing = getProfiles();
 if (existing.length > 0 && !process.argv.includes('--force')) {

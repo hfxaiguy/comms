@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'fs';
-import db, { createProfile, addAttribute } from './db.mjs';
+import { getDb, createProfile, addAttribute } from './db.mjs';
+const db = getDb();
 
 // ── Field mapping ────────────────────────────────────────────────────────────
 

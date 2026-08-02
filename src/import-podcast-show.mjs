@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'fs';
-import db, { createProfile } from './db.mjs';
+import { getDb, createProfile } from './db.mjs';
+const db = getDb();
 
 const SOURCE = '/home/love/Documents/Code/web-auto/podcast-show-speaker-results-2.json';
 const GROUP  = 'Speakers - Podcast Show';

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'fs';
-import db, { getGroups, createProfile } from './db.mjs';
+import { getDb, getGroups, createProfile } from './db.mjs';
+const db = getDb();
 
 const SOURCE = '/home/love/Documents/Code/web-auto/volta-results.json';
 const GROUP  = 'Volta Builders';

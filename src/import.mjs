@@ -1,7 +1,8 @@
 import { readFileSync } from 'fs';
 import { getSheetValues, getAllSheets, appendRows } from './sheets.mjs';
 import { loadConfig } from './profiles.mjs';
-import db, { createProfile, addAttribute } from './db.mjs';
+import { getDb, createProfile, addAttribute } from './db.mjs';
+const db = getDb();
 
 /** Parses one CSV line into an array of field strings, handling quoted fields and escaped quotes. */
 function parseRow(line) {
