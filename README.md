@@ -117,6 +117,77 @@ Place `.txt` files in `email-templates/`. Each file is a template — the filena
 npm test
 ```
 
+## Programmatic API
+
+The library exports tools and formatters for use by other applications (e.g. grandma-bob).
+
+### `src/tools.mjs`
+
+Exports an array of tool definitions compatible with grandma-kat's tool format:
+
+```js
+import { tools } from 'communications/src/tools.mjs';
+// tools = [{ name, description, parameters, execute }, ...]
+```
+
+Merge into the agent's runtime:
+
+```js
+import { tools as commsTools } from "communications/src/tools.mjs";
+const runtime = {
+  tools: { ...katTools, ...Object.fromEntries(commsTools.map(t => [t.name, t])) },
+};
+```
+
+Available tools:
+
+| Tool | Description |
+|---|---|
+| `search_contacts` | Search by name, email, company, phone, website, location |
+| `get_contact` | Full profile by name (attributes + relationships + messages) |
+| `list_contacts` | All contacts, optionally filtered by group |
+| `list_groups` | List all group names |
+| `add_contact` | Create a new contact with attributes |
+| `update_contact` | Add an attribute to an existing contact |
+| `delete_contact` | Delete a contact permanently |
+| `add_relationship` | Link two contacts together |
+| `log_message` | Log a sent message (WhatsApp, email, SMS, etc.) |
+
+### `src/format.mjs`
+
+Dual-format profile formatter — returns CLI text or structured JSON:
+
+```js
+import { formatProfile, formatProfiles } from 'communications/src/format.mjs';
+
+// CLI format (text string)
+const text = formatProfile(profile, attrs, rels, 'cli');
+
+// JSON format (structured object)
+const obj = formatProfile(profile, attrs, rels, 'json');
+
+// Batch format
+const all = formatProfiles(profiles, 'json', getAttributes, getRelationships);
+```
+
+The JSON shape:
+
+```json
+{
+  "id": 1,
+  "name": "Joanna Hilchie",
+  "group": "Job Junction",
+  "date_added": "2025-01-15",
+  "connection_level": "strong",
+  "emails": [{ "address": "...", "label": "" }],
+  "phones": [{ "number": "...", "label": "" }],
+  "companies": ["Job Junction"],
+  "professions": ["Employer Engagement Specialist"],
+  "messages": [{ "text": "...", "date_sent": "...", "channel": "WhatsApp" }],
+  "relationships": [{ "type": "related_to", "name": "Jane Smith" }]
+}
+```
+
 ## License
 
 MIT

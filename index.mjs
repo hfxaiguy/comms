@@ -11,6 +11,7 @@ import { sendEmail, sendBlast, listTemplates } from './src/email.mjs';
 import { processCards } from './src/cards.mjs';
 import { saveToSent } from './src/imap.mjs';
 import { arrowSelect } from './src/prompt.mjs';
+import { formatProfiles } from './src/format.mjs';
 import nodemailer from 'nodemailer';
 
 const __dirname   = path.dirname(fileURLToPath(import.meta.url));
@@ -36,81 +37,7 @@ function parseSpreadsheetId(input) {
 }
 
 function printProfiles(profiles) {
-  for (const p of profiles) {
-    const attrs = getAttributes(p.id);
-    const rels  = getRelationships(p.id);
-
-    const get = (type) => {
-      const a = attrs.filter(x => x.type === type);
-      return a.map(x => JSON.parse(x.data));
-    };
-    const getText = (type) => get(type).filter(v => typeof v === 'string');
-
-    const name  = [p.first_name, p.last_name].filter(Boolean).join(' ') || '(unnamed)';
-    const group = p.group_name ? `  [${p.group_name}]` : '';
-    console.log(`\n── ${name}${group}`);
-
-    const connectionLevel = getText('connection_level')[0];
-    const met             = getText('met')[0];
-    const dateAdded       = getText('date_added')[0];
-    if (dateAdded)       console.log(`   added      ${dateAdded}`);
-    if (connectionLevel) console.log(`   connection ${connectionLevel}`);
-    if (met)             console.log(`   met        ${met}`);
-
-    const cards = getText('card');
-    if (cards.length) cards.forEach(c => console.log(`   card       ${c}`));
-
-    const emails = get('email');
-    if (emails.length)
-      emails.forEach(e => console.log(`   email      ${e.address}${e.label ? ` (${e.label})` : ''}`));
-    const phones = get('phone');
-    if (phones.length)
-      phones.forEach(e => console.log(`   phone      ${e.number}${e.label ? ` (${e.label})` : ''}`));
-    const websites = get('website');
-    if (websites.length)
-      websites.forEach(e => console.log(`   website    ${e.url}${e.label ? ` (${e.label})` : ''}`));
-    const socials = get('social');
-    if (socials.length)
-      socials.forEach(e => console.log(`   social     ${e.url}${e.label ? ` (${e.label})` : ''}`));
-
-    const professions = getText('profession');
-    if (professions.length) professions.forEach(x => console.log(`   profession ${x}`));
-    const companies = getText('company');
-    if (companies.length) companies.forEach(x => console.log(`   company    ${x}`));
-    const podcasts = getText('podcast');
-    if (podcasts.length) podcasts.forEach(x => console.log(`   podcast    ${x}`));
-
-    const interests = getText('interest');
-    if (interests.length) interests.forEach(i => console.log(`   interest   ${i}`));
-
-    if (rels.length)
-      rels.forEach(r => {
-        const label = r.type === 'with' ? 'with' : 'related to';
-        console.log(`   ${label.padEnd(12)}${r.linked_name.trim() || `(profile #${r.linked_profile_id})`}`);
-      });
-
-    // Show any remaining text-based relationships (unmatched during migration)
-    const relatedTo = getText('related_to');
-    if (relatedTo.length) relatedTo.forEach(x => console.log(`   related to ${x}`));
-    const withText = getText('with');
-    if (withText.length) withText.forEach(x => console.log(`   with       ${x}`));
-
-    const proposals = getText('proposal');
-    if (proposals.length) proposals.forEach(i => console.log(`   propose    ${i}`));
-    const promises = getText('promise');
-    if (promises.length) promises.forEach(x => console.log(`   promise    ${x}`));
-
-    const notes = getText('note');
-    if (notes.length) notes.forEach(n => console.log(`   note       ${n}`));
-
-    const messages = get('message');
-    if (messages.length)
-      messages.forEach(m => {
-        const meta = [m.dateSent, m.status, m.channel].filter(Boolean).join(' · ');
-        console.log(`   message    ${m.text || '(empty)'}${meta ? `  [${meta}]` : ''}`);
-      });
-  }
-  console.log();
+  console.log(formatProfiles(profiles, 'cli', getAttributes, getRelationships));
 }
 
 const [,, command, ...args] = process.argv;
