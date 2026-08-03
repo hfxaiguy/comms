@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, existsSync } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -42,9 +42,9 @@ const SCHEMA = `
 function ensureDb() {
   refCount++;
   if (db) return;
-  db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  db = new DatabaseSync(DB_PATH);
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA foreign_keys = ON');
   db.exec(SCHEMA);
 }
 
@@ -133,9 +133,14 @@ export function createProfile(attrs) {
     const stmt = db.prepare(
       'INSERT INTO attributes (profile_id, type, data, sort_order) VALUES (?, ?, ?, ?)'
     );
-    db.transaction(() => {
+    db.exec('BEGIN');
+    try {
       attrs.forEach(({ type, data }, i) => stmt.run(profileId, type, data, i));
-    })();
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
     return profileId;
   } finally {
     closeDb();
@@ -146,8 +151,8 @@ export function addAttribute(profileId, type, data) {
   ensureDb();
   try {
     const maxOrder = db.prepare(
-      'SELECT COALESCE(MAX(sort_order), 0) FROM attributes WHERE profile_id = ?'
-    ).pluck().get(profileId);
+      'SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM attributes WHERE profile_id = ?'
+    ).get(profileId).max_order;
     db.prepare(
       'INSERT INTO attributes (profile_id, type, data, sort_order) VALUES (?, ?, ?, ?)'
     ).run(profileId, type, data, maxOrder + 1);
@@ -265,26 +270,33 @@ export function migrateTextRelationships() {
     let migrated = 0;
     let unmatched = 0;
 
-    const run = db.transaction(() => {
-      for (const rel of textRels) {
-        const text = JSON.parse(rel.data);
-        if (typeof text !== 'string' || !text.trim()) {
-          unmatched++;
-          continue;
-        }
+    const run = () => {
+      db.exec('BEGIN');
+      try {
+        for (const rel of textRels) {
+          const text = JSON.parse(rel.data);
+          if (typeof text !== 'string' || !text.trim()) {
+            unmatched++;
+            continue;
+          }
 
-        const nameKey = text.trim().toLowerCase();
-        const match = findByName.get(nameKey);
+          const nameKey = text.trim().toLowerCase();
+          const match = findByName.get(nameKey);
 
-        if (match && match.id !== rel.profile_id) {
-          addRelationship(rel.profile_id, match.id, rel.type);
-          deleteAttribute(rel.attr_id);
-          migrated++;
-        } else {
-          unmatched++;
+          if (match && match.id !== rel.profile_id) {
+            addRelationship(rel.profile_id, match.id, rel.type);
+            deleteAttribute(rel.attr_id);
+            migrated++;
+          } else {
+            unmatched++;
+          }
         }
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
       }
-    });
+    };
 
     run();
     return { migrated, unmatched };
@@ -359,8 +371,8 @@ export function logMessage(profileId, data) {
   ensureDb();
   try {
     const maxOrder = db.prepare(
-      'SELECT COALESCE(MAX(sort_order), 0) FROM attributes WHERE profile_id = ?'
-    ).pluck().get(profileId);
+      'SELECT COALESCE(MAX(sort_order), 0) AS max_order FROM attributes WHERE profile_id = ?'
+    ).get(profileId).max_order;
     db.prepare(
       'INSERT INTO attributes (profile_id, type, data, sort_order) VALUES (?, ?, ?, ?)'
     ).run(profileId, 'message', JSON.stringify(data), maxOrder + 1);
